@@ -6,7 +6,7 @@ querystring = require 'querystring'
 channels = [ 'default' ]
 channelInfo =
 	default:
-		clients: ['user1']
+		clients: []
 
 Buffer::readString = (pos) ->
 	len = @readUInt32BE pos
@@ -41,54 +41,60 @@ server = net.createServer (socket) ->
 		clientPublish = redis.createClient()
 
 		socket.on 'end', ->
-			clientPublish.publish currentChannel, querystring.stringify
+			console.log 'destroy'
+			client.end()
+			channelInfo[currentChannel].clients.splice channelInfo[currentChannel].clients.indexOf(nick), 1
+			clientPublish.publish currentChannel, JSON.stringify
 				type: 'userlist'
 				value: channelInfo[currentChannel].clients
-			client.end()
 			clientPublish.end()
-			channelInfo[currentChannel].clients.slice channelInfo[currentChannel].clients.indexOf(nick), 1
 
 		client.subscribe currentChannel
 
 		client.on 'message', (channel, message) ->
-			message = querystring.parse message
+			message = JSON.parse message
 			console.log message
 			if message.type is 'msg'
-				buf = new Buffer(message.value.length*2+4+4+1)
+				msg = "<p><strong>#{message.value.nick}:</strong><br>#{message.value.msg}</p>"
+				msg = msg.replace ';)', '<img src=":/smileys/smiley-wink.png" />'
+				buf = new Buffer(msg.length*2+4+4+1)
 				buf.writeUInt32BE 1, 0
-				buf.writeUInt8 1, 4
-				buf.writeUtf16String message.value, 5
+				buf.writeUInt8 3, 4
+				buf.writeUtf16String msg, 5
 			else if message.type is 'userlist'
+				console.log 'userlist'
 				users = message.value
+				if users.length is 0
+					buf = new Buffer 9
+					buf.writeUInt32BE 1, 0
+					buf.writeUInt8 2, 4
+					buf.writeUInt32BE 0, 5
+					return
 				len = 0
 				for u in users
 					len += 4+u.length*2
-				buf = new Buffer len+4+1
+				buf = new Buffer len+4+4+1
 				buf.writeUInt32BE 1, 0
 				buf.writeUInt8 2, 4
-				pos = 5
+				buf.writeUInt32BE users.length, 5
+				pos = 9
 				for u in users
-					console.log u
 					buf.writeUtf16String u, pos
 					pos += u.length*2+4
-				console.log pos, len
-			console.log buf
 			socket.write buf if channel is currentChannel
 
 		client.on 'subscribe', (channel) ->
 			socket.removeAllListeners 'data'
 			channelInfo[currentChannel].clients.push nick
-			clientPublish.publish currentChannel, querystring.stringify
+			clientPublish.publish currentChannel, JSON.stringify
 				type: 'userlist'
 				value: channelInfo[currentChannel].clients
 			socket.on 'data', (data) ->
-				console.log data
-				console.log channelInfo[currentChannel].clients
 				if data.readInt32BE(0) isnt 1 then socket.end()
 				if data.readUInt8(4) is 0x02
-					str = querystring.stringify
+					str = JSON.stringify
 						type: 'msg'
-						value: nick+": "+data.toString 'utf8', 9
+						value: { nick: nick, msg: data.toString('utf8', 9) }
 					clientPublish.publish currentChannel, str
 
 
