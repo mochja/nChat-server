@@ -45,6 +45,9 @@ server = net.createServer (socket) ->
 			client.end()
 			channelInfo[currentChannel].clients.splice channelInfo[currentChannel].clients.indexOf(nick), 1
 			clientPublish.publish currentChannel, JSON.stringify
+				type: 'msg'
+				value: { nick: null, msg: "<span style='color: #ccc; font-style: italic'>User #{nick} left room.</span>" }
+			clientPublish.publish currentChannel, JSON.stringify
 				type: 'userlist'
 				value: channelInfo[currentChannel].clients
 			clientPublish.end()
@@ -55,7 +58,10 @@ server = net.createServer (socket) ->
 			message = JSON.parse message
 			console.log message
 			if message.type is 'msg'
-				msg = "<p><strong>#{message.value.nick}:</strong><br>#{message.value.msg}</p>"
+				if message.value.nick isnt null
+					msg = "<div style=\"background-color: #ff0000\"><strong>#{message.value.nick}:</strong><br>{!{$date}!}#{message.value.msg}</div>"
+				else
+					msg = "<p>{!{$date}!}#{message.value.msg}</p>"
 				msg = msg.replace ';)', '<img src=":/smileys/smiley-wink.png" />'
 				buf = new Buffer(msg.length*2+4+4+1)
 				buf.writeUInt32BE 1, 0
@@ -86,6 +92,9 @@ server = net.createServer (socket) ->
 		client.on 'subscribe', (channel) ->
 			socket.removeAllListeners 'data'
 			channelInfo[currentChannel].clients.push nick
+			clientPublish.publish currentChannel, JSON.stringify
+				type: 'msg'
+				value: { nick: null, msg: "<span style='color: #ccc; font-style: italic'>User #{nick} entered room.</span>" }
 			clientPublish.publish currentChannel, JSON.stringify
 				type: 'userlist'
 				value: channelInfo[currentChannel].clients
